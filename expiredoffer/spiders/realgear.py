@@ -3,6 +3,8 @@ import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
 from expiredoffer.items import ExpiredofferItem
+from urllib.parse import urlparse
+
 
 
 class RealgearSpider(scrapy.Spider):
@@ -21,15 +23,24 @@ class RealgearSpider(scrapy.Spider):
 
     def parse(self, response):
 
-        loader = ItemLoader(item=ExpiredofferItem(), response=response)
-        loader.add_xpath('name', '//div[@class="product_name"]')
-        loader.add_xpath('availability', '//div[@class="product_title"]')
-        loader.add_xpath('url', '//p[@id="price"]')
-        yield loader.load_item()
-
         links = LinkExtractor(canonicalize=True, unique=True).extract_links(response)
         if links is not None:
-            for url in links:
-                yield response.follow(url, callback=self.parse)
-
+            for item in links:
+                parsed = urlparse(item.url)
+                if parsed.netloc == 'www.realgear.net':
+                    yield response.follow(item, callback=self.parse)
+                else:
+                    yield scrapy.Request(item.url, self.parse_offer)
         pass
+
+    def parse_offer(self, response):
+        loader = ItemLoader(item=ExpiredofferItem(), response=response)
+        loader.add_xpath('name', 'normalize-space(//h1[@id="title"]/span/descendant-or-self::text())')
+        loader.add_xpath('availability', 'normalize-space(//div[@id="availability"]/span/descendant-or-self::text())')
+        loader.add_xpath('asin', 'normalize-space(//form/input[@id="ASIN"]/@value)')
+        loader.add_value('url', response.url)
+        item = loader.load_item()
+        print(item)
+        return item
+
+# scrapy crawl realgear -o items.csv -t csv
